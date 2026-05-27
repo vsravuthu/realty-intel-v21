@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Realty Intel Pro V18</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">V18 • AI Buyer Due Diligence Engine</div>
+      <h1>Realty Intel Pro</h1>
+      <p>Paste any listing ad, URL, or address. V18 extracts claims, activates live public connectors, scores overpricing risk, estimates fair value, exposes hidden costs, and shows exactly what sources are verified or missing.</p>
+      <div class="statusbar"><span id="healthDot"></span><span id="healthText">Checking backend...</span><a href="/docs" target="_blank">API Docs</a></div>
+    </section>
+
+    <section class="panel input-panel">
+      <h2>Property + Listing Input</h2>
+      <label>Address</label>
+      <div class="autocomplete">
+        <input id="address" autocomplete="off" placeholder="Example: 3951 170th Ave SE, Bellevue, WA" />
+        <div id="suggestions" class="suggestions"></div>
+      </div>
+      <div id="lookupStatus" class="small muted"></div>
+
+      <label>Listing URL / source</label>
+      <input id="listingUrl" placeholder="Paste Zillow/Redfin/Realtor/broker URL or source" />
+
+      <label>Paste listing ad / broker remarks</label>
+      <textarea id="listingText" rows="7" placeholder="Example: Beautiful renovated 3 bed 2 bath Seattle home, 1,850 sqft, built in 1928, no HOA, water views, steps to light rail, top schools, listed at $1,150,000..."></textarea>
+
+      <div class="grid six">
+        <div><label>Price</label><input id="price" type="number" value="1150000" /></div>
+        <div><label>Beds</label><input id="beds" type="number" value="3" /></div>
+        <div><label>Baths</label><input id="baths" type="number" value="2" /></div>
+        <div><label>Sqft</label><input id="sqft" type="number" value="1850" /></div>
+        <div><label>Year built</label><input id="yearBuilt" type="number" value="1928" /></div>
+        <div><label>HOA/mo</label><input id="hoa" type="number" value="0" /></div>
+      </div>
+
+      <div class="actions">
+        <button id="sampleBtn" class="secondary">Load Sample</button>
+        <button id="extractBtn" class="secondary">Extract Claims</button>
+        <button id="runBtn">Run V18 Full Analysis</button>
+      </div>
+    </section>
+
+    <section id="loading" class="panel hidden"><div class="loader"></div><strong>Running V18 analysis...</strong><p>Parsing ad claims, calling live public data connectors, building comps, scoring hidden risks, and generating buyer report.</p></section>
+
+    <section id="results" class="hidden">
+      <div class="grid three">
+        <div class="panel kpi"><span>Verdict</span><strong id="verdict">—</strong><em id="confidence">—</em></div>
+        <div class="panel kpi"><span>Overall score</span><strong id="score">—</strong><em>weighted due diligence score</em></div>
+        <div class="panel kpi"><span>Fair value</span><strong id="fairValue">—</strong><em id="range">—</em></div>
+      </div>
+
+      <div class="panel">
+        <h2>Price Intelligence</h2>
+        <div id="valuationText" class="summary"></div>
+        <div id="comps" class="cards"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Ad Claim Verification</h2>
+        <div id="claims" class="table"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Factor Matrix</h2>
+        <div id="factors" class="factor-grid"></div>
+      </div>
+
+      <div class="grid two">
+        <div class="panel"><h2>Hidden Costs</h2><div id="costs" class="mini-list"></div></div>
+        <div class="panel"><h2>Investment Snapshot</h2><div id="investment" class="mini-list"></div></div>
+      </div>
+
+      <div class="panel">
+        <h2>Sources & Missing Critical Data</h2>
+        <div id="sources" class="cards"></div>
+        <h3>Missing sources before trusting this like a real buyer</h3>
+        <ul id="missing"></ul>
+      </div>
+
+      <div class="panel">
+        <h2>Buyer Action Plan</h2>
+        <ol id="actionsList"></ol>
+      </div>
+
+      <div class="panel">
+        <h2>Backtesting / Accuracy Dashboard</h2>
+        <div id="backtest" class="cards"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Generated Report</h2>
+        <pre id="report"></pre>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

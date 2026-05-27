@@ -1,0 +1,43 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    environment:
+      APP_ENV: local
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/realtyintel
+      REDIS_URL: redis://redis:6379/0
+      ENABLE_LIVE_PUBLIC_DATA: "true"
+      CONNECTOR_TIMEOUT_SECONDS: "5"
+      REALTY_INTEL_USER_AGENT: "RealtyIntelProV18/1.0 local-dev@example.com"
+      RESO_API_BASE: ${RESO_API_BASE:-}
+      RESO_ACCESS_TOKEN: ${RESO_ACCESS_TOKEN:-}
+      ENABLE_EXTERNAL_GEOCODER: "false"
+      ENABLE_LLM: "false"
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: realtyintel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata_v18:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+volumes:
+  pgdata_v18:
