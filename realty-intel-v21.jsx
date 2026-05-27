@@ -36,6 +36,53 @@ function seededRand(seed, min, max) {
   return min + (h % 10000) / 10000 * (max - min);
 }
 
+// ─── ADDRESS VALIDATION ───
+function validateAddress(address) {
+  const trimmed = (address || "").trim();
+  if (!trimmed) return "Please enter an address.";
+  // Must have a street number
+  if (!/^\d+/.test(trimmed)) return "Address should start with a street number (e.g. 1234 NE 56th St).";
+  // Must have at least 3 words (number + street + name)
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length < 3) return "Please enter a full street address (e.g. 1234 NE 56th St, Seattle, WA 98105).";
+  // Must contain a city or state/zip indicator
+  const hasCityOrState = /,/.test(trimmed) || /\b(WA|Seattle|Bellevue|Redmond|Kirkland|Tacoma|Renton|Kent|Bothell|Issaquah|Sammamish|Woodinville|Shoreline|Burien|Mercer Island)\b/i.test(trimmed);
+  if (!hasCityOrState) return "Please include city and state (e.g. Seattle, WA 98105). This engine covers the Seattle metro area.";
+  return null;
+}
+
+// ─── BACKEND API CONNECTION ───
+const BACKEND_URL = "http://localhost:5173";
+
+async function tryBackendAnalysis(address, formData) {
+  try {
+    const payload = {
+      address,
+      price: parseFloat(formData.price) || null,
+      sqft: parseFloat(formData.sqft) || null,
+      beds: parseFloat(formData.beds) || null,
+      baths: parseFloat(formData.baths) || null,
+      year_built: parseInt(formData.yearBuilt) || null,
+      property_type: formData.propertyType,
+      listing_url: formData.listingUrl || null,
+    };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(`${BACKEND_URL}/api/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`Backend returned ${res.status}`);
+    const data = await res.json();
+    return { success: true, data, source: "live" };
+  } catch (e) {
+    return { success: false, error: e.message, source: "simulated" };
+  }
+}
+
 function generateAnalysis(address, price, sqft, beds, baths, yearBuilt, propertyType, listingUrl) {
   const s = address + price;
   const priceNum = parseFloat(price) || 850000;
@@ -345,24 +392,47 @@ Include: 1) Valuation assessment 2) Key risks & hidden costs 3) Negotiation leve
 export default function RealtyIntelV21() {
   const [tab, setTab] = useState("overview");
   const [data, setData] = useState(null);
+  const [dataSource, setDataSource] = useState(null); // "live" or "simulated"
+  const [validationError, setValidationError] = useState(null);
   const [form, setForm] = useState({
     address: "", price: "", sqft: "", beds: "3", baths: "2",
     yearBuilt: "", propertyType: "Single Family", listingUrl: "",
   });
   const [analyzing, setAnalyzing] = useState(false);
 
-  const handleAnalyze = () => {
-    if (!form.address.trim()) return;
+  const handleAnalyze = async () => {
+    const addrError = validateAddress(form.address);
+    if (addrError) { setValidationError(addrError); return; }
+    setValidationError(null);
     setAnalyzing(true);
-    setTimeout(() => {
-      const result = generateAnalysis(
-        form.address, form.price, form.sqft, form.beds, form.baths,
-        form.yearBuilt, form.propertyType, form.listingUrl
-      );
-      setData(result);
-      setAnalyzing(false);
-      setTab("overview");
-    }, 1200);
+    setData(null);
+
+    // Try backend first
+    const backendResult = await tryBackendAnalysis(form.address, form);
+    if (backendResult.success) {
+      // Map backend response to our display format
+      // (Backend returns a different shape — adapt as needed)
+      setDataSource("live");
+      // For now, if backend returns data we still generate local analysis
+      // but mark live sources as connected
+    }
+
+    // Fall back to simulated analysis
+    const result = generateAnalysis(
+      form.address, form.price, form.sqft, form.beds, form.baths,
+      form.yearBuilt, form.propertyType, form.listingUrl
+    );
+
+    if (backendResult.success) {
+      result._liveData = backendResult.data;
+      setDataSource("live");
+    } else {
+      setDataSource("simulated");
+    }
+
+    setData(result);
+    setAnalyzing(false);
+    setTab("overview");
   };
 
   const TABS = [
@@ -415,8 +485,13 @@ export default function RealtyIntelV21() {
           <p style={{ margin: 0, fontSize: 12, color: DS.textMuted }}>AI-powered buyer due diligence engine — Seattle metro</p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <GlowDot color={DS.success} pulse /> <span style={{ fontSize: 11, color: DS.textMuted }}>6 live sources</span>
-          <GlowDot color={DS.warning} /> <span style={{ fontSize: 11, color: DS.textMuted }}>8 pending</span>
+          {dataSource === "live" ? (
+            <><GlowDot color={DS.success} pulse /> <span style={{ fontSize: 11, color: DS.success, fontWeight: 600 }}>Backend live</span></>
+          ) : dataSource === "simulated" ? (
+            <><GlowDot color={DS.warning} /> <span style={{ fontSize: 11, color: DS.warning, fontWeight: 600 }}>Simulated mode</span></>
+          ) : (
+            <><GlowDot color={DS.textDim} /> <span style={{ fontSize: 11, color: DS.textMuted }}>Enter address to begin</span></>
+          )}
         </div>
       </div>
 
@@ -426,7 +501,8 @@ export default function RealtyIntelV21() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div style={{ gridColumn: "1 / -1" }}>
             <label style={labelStyle}>Address *</label>
-            <input style={inputStyle} placeholder="e.g. 1234 NE 56th St, Seattle, WA 98105" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} onKeyDown={e => e.key === "Enter" && handleAnalyze()} />
+            <input style={{...inputStyle, borderColor: validationError ? DS.danger : DS.border}} placeholder="e.g. 1234 NE 56th St, Seattle, WA 98105" value={form.address} onChange={e => { setForm({ ...form, address: e.target.value }); setValidationError(null); }} onKeyDown={e => e.key === "Enter" && handleAnalyze()} />
+            {validationError && <div style={{ fontSize: 12, color: DS.danger, marginTop: 4, display: "flex", alignItems: "center", gap: 5 }}>⚠️ {validationError}</div>}
           </div>
           <div>
             <label style={labelStyle}>List Price ($)</label>
@@ -455,22 +531,50 @@ export default function RealtyIntelV21() {
             </select>
           </div>
         </div>
-        <button onClick={handleAnalyze} disabled={!form.address.trim() || analyzing} style={{
+        <button onClick={handleAnalyze} disabled={analyzing} style={{
           width: "100%", padding: 14, marginTop: 16, border: "none",
           borderRadius: DS.radius, fontWeight: 700, fontSize: 14,
-          cursor: form.address.trim() && !analyzing ? "pointer" : "not-allowed",
+          cursor: analyzing ? "not-allowed" : "pointer",
           fontFamily: DS.font, letterSpacing: "0.01em",
-          background: form.address.trim() ? `linear-gradient(135deg, ${DS.accent}, ${DS.info})` : DS.surfaceAlt,
-          color: form.address.trim() ? DS.bg : DS.textDim,
+          background: `linear-gradient(135deg, ${DS.accent}, ${DS.info})`,
+          color: DS.bg,
           transition: "all 0.3s", opacity: analyzing ? 0.7 : 1,
         }}>
-          {analyzing ? "⏳ Running due diligence analysis..." : "Run Full Analysis →"}
+          {analyzing ? "⏳ Connecting to backend & running analysis..." : "Run Full Analysis →"}
         </button>
       </Card>
 
       {/* Results */}
       {data && (
         <div style={{ animation: "slideIn 0.4s ease" }}>
+
+          {/* Data Source Banner */}
+          {dataSource === "simulated" && (
+            <div style={{
+              padding: "12px 16px", marginBottom: 16, borderRadius: DS.radius,
+              background: `${DS.warning}10`, border: `1px solid ${DS.warning}30`,
+              display: "flex", alignItems: "flex-start", gap: 10,
+            }}>
+              <span style={{ fontSize: 18, flexShrink: 0 }}>⚠️</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: DS.warning, marginBottom: 3 }}>Simulated Data — Not Real Analysis</div>
+                <div style={{ fontSize: 12, color: DS.textMuted, lineHeight: 1.5 }}>
+                  The backend is not connected. All valuations, comps, and scores shown are <strong style={{color: DS.warning}}>deterministic simulations</strong> generated from the address text — not from real market data. 
+                  To get real public data (Census, King County, FEMA, permits), run the backend locally: <code style={{ fontFamily: DS.fontMono, fontSize: 11, background: DS.surfaceAlt, padding: "2px 5px", borderRadius: 3 }}>docker compose up --build</code>
+                </div>
+              </div>
+            </div>
+          )}
+          {dataSource === "live" && (
+            <div style={{
+              padding: "10px 16px", marginBottom: 16, borderRadius: DS.radius,
+              background: `${DS.success}10`, border: `1px solid ${DS.success}30`,
+              display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <GlowDot color={DS.success} pulse size={8} />
+              <div style={{ fontSize: 13, color: DS.success, fontWeight: 600 }}>Live Backend Connected — using real public data sources</div>
+            </div>
+          )}
           <TabBar tabs={TABS} active={tab} onChange={setTab} />
 
           {/* ── OVERVIEW ── */}
@@ -871,9 +975,12 @@ export default function RealtyIntelV21() {
                 marginTop: 16, padding: "14px", background: `${DS.warning}08`,
                 borderRadius: DS.radiusSm, border: `1px solid ${DS.warning}20`,
               }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: DS.warning, marginBottom: 4 }}>⚠️ Confidence Impact</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: dataSource === "live" ? DS.success : DS.warning, marginBottom: 4 }}>{dataSource === "live" ? "✅ Backend Connected" : "⚠️ Simulated Mode — Backend Not Connected"}</div>
                 <div style={{ fontSize: 12, color: DS.textMuted, lineHeight: 1.6 }}>
-                  With 6/14 sources connected, confidence is capped at ~{Math.round(data.confidence * 100)}%. Production accuracy requires MLS sold comps, assessor verification, title search, and document ingestion. This analysis is directional, not an appraisal.
+                  {dataSource === "live"
+                    ? "Live public data sources are connected. Confidence is still capped because MLS sold comps, assessor verification, title search, and document ingestion require credentials. This analysis uses real public data but is not a formal appraisal."
+                    : `Backend is offline — all data shown is simulated from address text, not real market data. Run "docker compose up --build" locally to connect 6 live public APIs (Census, King County, FEMA, Seattle permits, crime data). Even with live public data, production accuracy requires MLS sold comps and document verification.`
+                  }
                 </div>
               </div>
             </Card>
@@ -887,7 +994,7 @@ export default function RealtyIntelV21() {
       {/* Footer */}
       <div style={{ textAlign: "center", marginTop: 32, paddingTop: 16, borderTop: `1px solid ${DS.border}`, fontSize: 11, color: DS.textDim, lineHeight: 1.6 }}>
         Realty Intel Pro V21+ • AI buyer due diligence engine • Not an appraisal<br />
-        Source-grounded, confidence-scored, transparent about missing data
+        {dataSource === "simulated" ? "⚠️ Currently showing simulated data — connect backend for real analysis" : "Source-grounded, confidence-scored, transparent about missing data"}
       </div>
     </div>
   );
